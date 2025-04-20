@@ -7,13 +7,17 @@ Created on Fri Apr 18 19:32:19 2025
 
 import pandas as pd
 import matplotlib.pyplot as plt
+import numpy as np
+import scipy.optimize as optimize
 from sklearn.preprocessing import StandardScaler
 from sklearn.cluster import KMeans
 from sklearn.metrics import silhouette_score
+from errors import *
 
 def read_csv (filename, year):
     """
-    Reads a csv file, removes rows with NaN values, and returns it as a dataframe with the specified year
+    Reads a csv file, removes rows with NaN values, and returns it as a 
+    dataframe with the specified year
     Parameters
     filename : str, name of the csv file
     year : str, the year to filter the data
@@ -23,7 +27,8 @@ def read_csv (filename, year):
     """
     
     df = pd.read_csv(filename, skiprows=4)  
-    df_clean = df.drop(columns=["Country Code", "Indicator Code", "Indicator Name"], errors="ignore")
+    df_clean = df.drop(columns=["Country Code", "Indicator Code", 
+                                "Indicator Name"], errors="ignore")
     if year not in df_clean.columns:
         raise ValueError(f"Year {year} not found in {filename}")
     
@@ -33,7 +38,8 @@ def read_csv (filename, year):
     return df_year
 
 # emissions excluding LULUCF per capita (tCO2e/capita)
-emissions20 = read_csv ("API_EN.GHG.CO2.PC.CE.AR5_DS2_en_csv_v2_21047.csv", "2020")
+emissions20 = read_csv ("API_EN.GHG.CO2.PC.CE.AR5_DS2_en_csv_v2_21047.csv", 
+                        "2020")
 emissions20.columns = ['Country Name', 'CO2 per Capita']
 # GDP per capita (current US$)
 gdp20 = read_csv("API_NY.GDP.PCAP.CD_DS2_en_csv_v2_19346.csv", "2020")
@@ -107,7 +113,8 @@ cluster_centers = scaler.inverse_transform(kmeans3.cluster_centers_)
 plt.figure()
 scatter = plt.scatter(merged20['GDP per Capita'], merged20['CO2 per Capita'],
                       c=merged20['Cluster'], cmap='viridis', s=60)
-plt.scatter(cluster_centers[:, 1], cluster_centers[:, 0], c='red', marker='x', s=100, label='Cluster Centers')
+plt.scatter(cluster_centers[:, 1], cluster_centers[:, 0], c='red', marker='x', 
+            s=100, label='Cluster Centers')
 
 plt.xlabel('GDP per Capita')
 plt.ylabel('CO2 Emissions per Capita')
@@ -119,7 +126,44 @@ plt.legend()
 plt.grid(True)
 plt.show()      
        
-       
+#%% Fitting CO2 per capita as a function of GDP per capita
+
+# model: logarithmic (CO2 per capita as a function of GDP per capita)
+def log_model(x, a, b):
+    return a * np.log(x) + b
+
+x_data = merged20['GDP per Capita'].values
+y_data = merged20['CO2 per Capita'].values
+
+mask = (x_data > 0) & (y_data > 0)
+x_data = x_data[mask]
+y_data = y_data[mask]
+
+# fit model
+params, cov = optimize.curve_fit(log_model, x_data, y_data)
+
+x_fit = np.linspace(min(x_data), max(x_data), 100)
+y_fit = log_model(x_fit, *params)
+
+# confidence interval
+sigma = error_prop(x_fit, log_model, params, cov)
+lower = y_fit - sigma
+upper = y_fit + sigma
+
+# plot (with confidence)
+plt.figure()
+plt.scatter(x_data, y_data, label='Data')
+plt.plot(x_fit, y_fit, color='red', label='Log Fit')
+plt.fill_between(x_fit, lower, upper, color='gray', alpha=0.3, label='Confidence Range')
+plt.xscale('log')
+plt.yscale('log')
+plt.xlabel('GDP per Capita')
+plt.ylabel('CO2 per Capita')
+plt.title('Log Fit: CO2 vs GDP (2020)')
+plt.legend()
+plt.grid()
+plt.show()
+
        
        
        
