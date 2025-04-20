@@ -12,31 +12,57 @@ import scipy.optimize as optimize
 from sklearn.preprocessing import StandardScaler
 from sklearn.cluster import KMeans
 from sklearn.metrics import silhouette_score
+from sklearn.metrics import r2_score
 from errors import *
 
-def read_csv (filename, year):
+def read_csv (filename, year = None):
     """
     Reads a csv file, removes rows with NaN values, and returns it as a 
     dataframe with the specified year
     Parameters
     filename : str, name of the csv file
-    year : str, the year to filter the data
+    year : str or None, the year to filter the data
 
     Returns
     df_complete : dataframe
     """
-    
-    df = pd.read_csv(filename, skiprows=4)  
-    df_clean = df.drop(columns=["Country Code", "Indicator Code", 
-                                "Indicator Name"], errors="ignore")
-    if year not in df_clean.columns:
-        raise ValueError(f"Year {year} not found in {filename}")
-    
-    df_year = df_clean[['Country Name', year]].copy()
-    df_year = df_year.dropna()
-    
-    return df_year
+    df = pd.read_csv(filename, skiprows=4)
+    df_clean = df.drop(columns=["Country Code", "Indicator Name", 
+                                "Indicator Code"], errors="ignore")
+    df_clean = df_clean[df_clean['Country Name'].notna()]
 
+    if year is not None:
+       if year not in df_clean.columns:
+           raise ValueError(f"Year {year} not found in {filename}")
+       
+       df_year = df_clean[['Country Name', year]].copy()
+       df_year = df_year.dropna()
+       return df_year
+   
+    year_cols = [col for col in df_clean.columns if col.isnumeric()]
+    df_long = df_clean[['Country Name'] + year_cols].copy()
+    df_long = df_long.melt(id_vars='Country Name', 
+                           var_name='Year', 
+                           value_name='Value')
+    df_long.dropna(inplace=True)
+    df_long['Year'] = df_long['Year'].astype(int)
+    return df_long
+
+
+def log_model(x, a, b):
+    """function for a logarithmic model"""
+    return a * np.log(x) + b
+
+def linear_model(x, a, b):
+    return a * x + b
+
+def poly2_model(x, a, b, c):
+    return a * x**2 + b * x + c
+
+def poly3_model(x, a, b, c, d):
+    return a * x**3 + b * x**2 + c * x + d
+
+#%%
 # emissions excluding LULUCF per capita (tCO2e/capita)
 emissions20 = read_csv ("API_EN.GHG.CO2.PC.CE.AR5_DS2_en_csv_v2_21047.csv", 
                         "2020")
@@ -125,19 +151,25 @@ plt.colorbar(scatter)
 plt.legend()
 plt.grid(True)
 plt.show()      
+
+# shows which cluster each country belongs to
+for cluster_id in sorted(merged20['Cluster'].unique()):
+    countries = merged20[merged20['Cluster'] == cluster_id]['Country Name'].tolist()
+    print(f"\nCluster {cluster_id}:")
+    for country in countries:
+        print(f" - {country}")
        
 #%% Fitting CO2 per capita as a function of GDP per capita
-
-# model: logarithmic (CO2 per capita as a function of GDP per capita)
-def log_model(x, a, b):
-    return a * np.log(x) + b
 
 x_data = merged20['GDP per Capita'].values
 y_data = merged20['CO2 per Capita'].values
 
+# filters dataa to only positive values
 mask = (x_data > 0) & (y_data > 0)
 x_data = x_data[mask]
 y_data = y_data[mask]
+
+merged = merged20.loc[mask].copy()
 
 # fit model
 params, cov = optimize.curve_fit(log_model, x_data, y_data)
@@ -150,27 +182,86 @@ sigma = error_prop(x_fit, log_model, params, cov)
 lower = y_fit - sigma
 upper = y_fit + sigma
 
+
+#%%
+# compute predicted values for CO2 per capita
+predicted_y = log_model(x_data, *params)
+residuals = y_data - predicted_y
+
+# Add residuals back into the dataframe
+merged['Residual'] = residuals
+merged['Abs Residual'] = np.abs(residuals)
+
+# Sort by absolute residual to find biggest outliers
+outliers = merged.sort_values(by='Abs Residual', ascending=False).head(10)
+
+print("Top 10 outliers:")
+print(outliers[['Country Name', 'GDP per Capita', 'CO2 per Capita', 
+                'Residual']])
+
+
 # plot (with confidence)
-plt.figure()
-plt.scatter(x_data, y_data, label='Data')
+plt.figure(figsize = (12,6))
+scatter = plt.scatter(merged['GDP per Capita'], merged['CO2 per Capita'],
+                      c=merged['Cluster'], cmap='viridis', s=60, label='Data')
 plt.plot(x_fit, y_fit, color='red', label='Log Fit')
-plt.fill_between(x_fit, lower, upper, color='gray', alpha=0.3, label='Confidence Range')
+plt.fill_between(x_fit, lower, upper, color='grey', alpha=0.3, 
+                 label='Confidence Range')
 plt.xscale('log')
 plt.yscale('log')
 plt.xlabel('GDP per Capita')
 plt.ylabel('CO2 per Capita')
 plt.title('Log Fit: CO2 vs GDP (2020)')
-plt.legend()
 plt.grid()
+plt.colorbar(scatter, label='Cluster')
+plt.legend()
 plt.show()
 
-       
-       
-       
-       
-       
-       
-       
+#%% Time series fit
+
+co2_all_years = read_csv("API_EN.GHG.CO2.PC.CE.AR5_DS2_en_csv_v2_21047.csv")
+co2_all_years.rename(columns={"Value": "CO2 per Capita"}, inplace=True)
+
+
+#%%
+
+cluster0_countries = merged20[merged20["Cluster"] == 0]["Country Name"].values
+
+# full data for countries in cluster 0
+cluster_0 = co2_all_years[co2_all_years["Country Name"].isin(cluster0_countries)].copy()
+cluster0_df = cluster_0[cluster_0["CO2 per Capita"] > 0]
+
+# average co2 per capita per year for cluster 0
+cluster0_avg = cluster0_df.groupby("Year")["CO2 per Capita"].mean().reset_index()
+
+x = cluster0_avg["Year"].values
+y = cluster0_avg["CO2 per Capita"].values
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+     
        
        
        
