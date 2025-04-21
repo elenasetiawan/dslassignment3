@@ -59,10 +59,7 @@ def linear_model(x, a, b):
 def poly2_model(x, a, b, c):
     return a * x**2 + b * x + c
 
-def poly3_model(x, a, b, c, d):
-    return a * x**3 + b * x**2 + c * x + d
-
-#%%
+#%% datas
 # emissions excluding LULUCF per capita (tCO2e/capita)
 emissions20 = read_csv ("API_EN.GHG.CO2.PC.CE.AR5_DS2_en_csv_v2_21047.csv", 
                         "2020")
@@ -71,6 +68,9 @@ emissions20.columns = ['Country Name', 'CO2 per Capita']
 gdp20 = read_csv("API_NY.GDP.PCAP.CD_DS2_en_csv_v2_19346.csv", "2020")
 gdp20.columns = ['Country Name', 'GDP per Capita']
 
+# data for all years (for time series fit)
+co2_all_years = read_csv("API_EN.GHG.CO2.PC.CE.AR5_DS2_en_csv_v2_21047.csv")
+co2_all_years.rename(columns={"Value": "CO2 per Capita"}, inplace=True)
 
 merged20 = emissions20.merge(gdp20, on='Country Name')
 merged20 = merged20.dropna()
@@ -154,12 +154,13 @@ plt.show()
 
 # shows which cluster each country belongs to
 for cluster_id in sorted(merged20['Cluster'].unique()):
-    countries = merged20[merged20['Cluster'] == cluster_id]['Country Name'].tolist()
+    countries = merged20[merged20['Cluster'] == 
+                         cluster_id]['Country Name'].tolist()
     print(f"\nCluster {cluster_id}:")
     for country in countries:
         print(f" - {country}")
        
-#%% Fitting CO2 per capita as a function of GDP per capita
+#%% fitting CO2 per capita as a function of GDP per capita
 
 x_data = merged20['GDP per Capita'].values
 y_data = merged20['CO2 per Capita'].values
@@ -183,7 +184,6 @@ lower = y_fit - sigma
 upper = y_fit + sigma
 
 
-#%%
 # compute predicted values for CO2 per capita
 predicted_y = log_model(x_data, *params)
 residuals = y_data - predicted_y
@@ -215,35 +215,29 @@ plt.title('Log Fit: CO2 vs GDP (2020)')
 plt.grid()
 plt.colorbar(scatter, label='Cluster')
 plt.legend()
-plt.show()
-
-#%% Time series fit
-
-co2_all_years = read_csv("API_EN.GHG.CO2.PC.CE.AR5_DS2_en_csv_v2_21047.csv")
-co2_all_years.rename(columns={"Value": "CO2 per Capita"}, inplace=True)
+plt.show
 
 
-#%%
+#%% data for each clusters
 
 cluster0_countries = merged20[merged20["Cluster"] == 0]["Country Name"].values
-
-# full data for countries in cluster 0
-cluster_0 = co2_all_years[co2_all_years["Country Name"].isin(cluster0_countries)].copy()
+cluster_0 = co2_all_years[co2_all_years["Country Name"].isin
+                          (cluster0_countries)].copy()
 cluster0_df = cluster_0[cluster_0["CO2 per Capita"] > 0]
 
-# average co2 per capita per year for cluster 0
-cluster0_avg = cluster0_df.groupby("Year")["CO2 per Capita"].mean().reset_index()
-
-x = cluster0_avg["Year"].values
-y = cluster0_avg["CO2 per Capita"].values
-
+cluster1_countries = merged20[merged20["Cluster"] == 1]["Country Name"].values
+cluster_1 = co2_all_years[co2_all_years["Country Name"].isin
+                          (cluster1_countries)].copy()
+cluster1_df = cluster_1[cluster_1["CO2 per Capita"] > 0]
 
 
+cluster2_countries = merged20[merged20["Cluster"] == 2]["Country Name"].values
+cluster_2 = co2_all_years[co2_all_years["Country Name"].isin
+                          (cluster2_countries)].copy()
+cluster2_df = cluster_2[cluster_2["CO2 per Capita"] > 0]
 
 
-
-
-
+print (cluster0_df, cluster1_df, cluster2_df)
 
 
 
