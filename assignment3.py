@@ -68,9 +68,11 @@ emissions20.columns = ['Country Name', 'CO2 per Capita']
 gdp20 = read_csv("API_NY.GDP.PCAP.CD_DS2_en_csv_v2_19346.csv", "2020")
 gdp20.columns = ['Country Name', 'GDP per Capita']
 
-# data for all years (for time series fit)
+# data for all years
 co2_all_years = read_csv("API_EN.GHG.CO2.PC.CE.AR5_DS2_en_csv_v2_21047.csv")
 co2_all_years.rename(columns={"Value": "CO2 per Capita"}, inplace=True)
+gdp_all_years = read_csv("API_NY.GDP.PCAP.CD_DS2_en_csv_v2_19346.csv")
+gdp_all_years.rename(columns={"Value": "GDP per Capita"}, inplace=True)
 
 merged20 = emissions20.merge(gdp20, on='Country Name')
 merged20 = merged20.dropna()
@@ -159,6 +161,40 @@ for cluster_id in sorted(merged20['Cluster'].unique()):
     print(f"\nCluster {cluster_id}:")
     for country in countries:
         print(f" - {country}")
+
+#%% data for each clusters
+
+cluster0_countries = merged20[merged20["Cluster"] == 0]["Country Name"].values
+cluster_0 = co2_all_years[co2_all_years["Country Name"].isin
+                          (cluster0_countries)].copy()
+cluster0_df = cluster_0[cluster_0["CO2 per Capita"] > 0]
+cluster0_df = cluster0_df.merge(gdp_all_years[['Country Name', 'Year', 
+                                               'GDP per Capita']],
+                                on=['Country Name', 'Year'], how='left')
+cluster0_df = cluster0_df[cluster0_df['GDP per Capita'] > 0]
+
+cluster1_countries = merged20[merged20["Cluster"] == 1]["Country Name"].values
+cluster_1 = co2_all_years[co2_all_years["Country Name"].isin
+                          (cluster1_countries)].copy()
+cluster1_df = cluster_1[cluster_1["CO2 per Capita"] > 0]
+cluster1_df = cluster1_df.merge(gdp_all_years[['Country Name', 'Year', 
+                                               'GDP per Capita']],
+                                on=['Country Name', 'Year'], how='left')
+cluster1_df = cluster1_df[cluster1_df['GDP per Capita'] > 0]
+
+
+cluster2_countries = merged20[merged20["Cluster"] == 2]["Country Name"].values
+cluster_2 = co2_all_years[co2_all_years["Country Name"].isin
+                          (cluster2_countries)].copy()
+cluster2_df = cluster_2[cluster_2["CO2 per Capita"] > 0]
+cluster2_df = cluster2_df.merge(gdp_all_years[['Country Name', 'Year', 
+                                               'GDP per Capita']],
+                                on=['Country Name', 'Year'], how='left')
+cluster2_df = cluster2_df[cluster2_df['GDP per Capita'] > 0]
+
+
+print (cluster0_df, cluster1_df, cluster2_df)
+
        
 #%% fitting CO2 per capita as a function of GDP per capita
 
@@ -215,33 +251,72 @@ plt.title('Log Fit: CO2 vs GDP (2020)')
 plt.grid()
 plt.colorbar(scatter, label='Cluster')
 plt.legend()
-plt.show
+plt.show ()
 
 
-#%% data for each clusters
+# Predicted CO2 values using the fitted model
+predicted_y = log_model(x_data, *params)
 
-cluster0_countries = merged20[merged20["Cluster"] == 0]["Country Name"].values
-cluster_0 = co2_all_years[co2_all_years["Country Name"].isin
-                          (cluster0_countries)].copy()
-cluster0_df = cluster_0[cluster_0["CO2 per Capita"] > 0]
+# Calculate R² score
+r2 = r2_score(y_data, predicted_y)
 
-cluster1_countries = merged20[merged20["Cluster"] == 1]["Country Name"].values
-cluster_1 = co2_all_years[co2_all_years["Country Name"].isin
-                          (cluster1_countries)].copy()
-cluster1_df = cluster_1[cluster_1["CO2 per Capita"] > 0]
+print(f"R² Score: {r2}")
 
 
-cluster2_countries = merged20[merged20["Cluster"] == 2]["Country Name"].values
-cluster_2 = co2_all_years[co2_all_years["Country Name"].isin
-                          (cluster2_countries)].copy()
-cluster2_df = cluster_2[cluster_2["CO2 per Capita"] > 0]
+#%% predictions
+
+# specific countries (2 from each cluster)
+countries_of_interest = ['China', 'United Kingdom', 'Germany', 'Japan', 
+                         'Brazil', 'Indonesia']
+predictions = []
+
+for country in countries_of_interest:
+    # 2020 GDP per capita
+    gdp_current = merged20.loc[merged20['Country Name'] == country, 
+                               'GDP per Capita'].values[0]    
+    # assume 30% growth rate in GDP
+    gdp_future = gdp_current * 1.3
+    co2_pred = log_model(gdp_future, *params)
+
+    # confidence interval
+    sigma = error_prop(np.array([gdp_future]), log_model, params, cov)[0]
+    lower = co2_pred - sigma
+    upper = co2_pred + sigma
+
+    predictions.append((country, gdp_future, co2_pred, lower, upper))
+
+# Print a clean table
+print(f"{'Country':<15} {'Future GDP':>12} {'Pred CO2':>12}" 
+      f"{'Lower bound':>12}{'Upper bound':>12}")
+for country, gdp, co2, lo, hi in predictions:
+    print(f"{country:<15} {gdp:12.2f} {co2:12.2f} {lo:12.2f} {hi:12.2f}")
 
 
-print (cluster0_df, cluster1_df, cluster2_df)
+# plot
+colors = plt.cm.tab10.colors
 
+plt.figure(figsize=(10,6))
 
+# plotting historical CO2 per capita
+for i, country in enumerate(countries_of_interest):
+    country_data = co2_all_years[(co2_all_years['Country Name'] == country) & 
+                                 (co2_all_years['CO2 per Capita'] > 0)]
+    
+    plt.plot(country_data['Year'], country_data['CO2 per Capita'],
+             label=f"{country} (historical)", color=colors[i % len(colors)])
+    
+    _, gdp_future, co2_pred, lower, upper = [pred for pred in predictions if pred[0] == country][0]
+    
+    plt.errorbar(2030, co2_pred, yerr=[[co2_pred - lower], [upper - co2_pred]], 
+                 fmt='o', color=colors[i % len(colors)], capsize=5, label=f"{country} (predicted)")
 
-
+plt.title("CO₂ per Capita Over Time + 2025 Prediction by Country")
+plt.xlabel("Year")
+plt.ylabel("CO₂ per Capita")
+plt.legend(loc='upper left', bbox_to_anchor=(1, 1))
+plt.grid(True)
+plt.yscale("log")
+plt.show()
 
 
 
