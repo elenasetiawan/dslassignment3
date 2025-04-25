@@ -53,11 +53,6 @@ def log_model(x, a, b):
     """function for a logarithmic model"""
     return a * np.log(x) + b
 
-def linear_model(x, a, b):
-    return a * x + b
-
-def poly2_model(x, a, b, c):
-    return a * x**2 + b * x + c
 
 #%% datas
 # emissions excluding LULUCF per capita (tCO2e/capita)
